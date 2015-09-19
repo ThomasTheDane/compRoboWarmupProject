@@ -26,6 +26,8 @@ class Runner(object):
 		self.linear = 0
 		self.angular = 0
 
+		self.ranges = []
+
 		self.settings = termios.tcgetattr(sys.stdin)
 		rospy.init_node('human_follow')
 
@@ -34,10 +36,16 @@ class Runner(object):
 
 		self.hfollower = HumanFollow(.5)
 
-	
-
 	def find_human(self):
+
+		# Print nonzero values, with their index (angle)
+		s = ""
+		for i in range(0, self.ranges):
+			if (self.ranges[i] != 0):
+				s = s + "["+str(i)+ ", "+ +" ]"
+
 		pass
+
 
 	def process_key(self):
 		print "processing key"
@@ -45,15 +53,19 @@ class Runner(object):
 		select.select([sys.stdin], [], [], 0)
 		key = sys.stdin.read(1)
 		termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.settings)
+		
+		# Shut off on "z" press
 		if (key == 'z'):
 			self.done = True
+
+		# Forward on "w" press
 		elif (key == 'w'):
 			self.linear = 1
 
 	def process_scan(self, scan):
-		self.ranges = scan.ranges
+		self.ranges = scan.ranges[0:360]
+		print "Scan data length:",  len(self.ranges)
 		self.find_human()
-		
 
 	def run(self):
 		r = rospy.Rate(10)
@@ -62,7 +74,7 @@ class Runner(object):
 			key = self.process_key()
 
 
-			# Move.
+			# Move - Set linear and angular speeds to those owned by self.
 			print "linear: " + str(self.linear) + \
 			", angular: " + str(self.angular)
 			twist = Twist()
@@ -77,7 +89,8 @@ class Runner(object):
 
 			self.pub.publish(twist)
 
-		# Quit.
+
+		# Quit - Set linear and angular speeds to zero.
 		twist = Twist()
 		twist.linear.x = 0
 		twist.linear.y = 0

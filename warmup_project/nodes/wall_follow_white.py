@@ -24,12 +24,12 @@ give = 5
 target = .5 
 
 class Runner(object):
-	def __init__(self):
+	def __init__(self, wall_distance):
 		# Robot states
 		self.done = False
 		self.distanced = False
-		self.parallel = False
-		self.wallside = "RIGHT"
+		self.wall_distance = wall_distance
+		self.wall_error = .1
 
 		# Robot speed variables
 		self.speed = .1
@@ -59,19 +59,6 @@ class Runner(object):
 		# print "[" + str(min_index) + ", "+ str(min_dist) + "]"
 		return [min_index, min_dist]
 
-	def orient_parallel(self):
-		turn = 0
-		minimum = self.find_closest_nonzero()
-		angle = minimum[0] # Angle to closest object
-
-		if angle > 180:
-			self.error = angle - 270.0
-		else:
-			self.error = angle - 90.0
-
-		turn = self.error / 90.0
-		self.angular = turn
-
 
 	def process_key(self):
 		tty.setraw(sys.stdin.fileno())
@@ -88,8 +75,31 @@ class Runner(object):
 		elif (key == 'w'):
 			self.linear = 1
 
+	def orient_parallel(self):
+		print "going parallel"
+		turn = 0
+		minimum = self.find_closest_nonzero()
+		angle = minimum[0] # Angle to closest object
+
+		if angle > 180:
+			self.error = angle - 270.0
+		else:
+			self.error = angle - 90.0
+
+		turn = self.error / 90.0
+		self.angular = turn
+
 	def process_scan(self, scan):
 		self.ranges = scan.ranges[0:360]
+
+	def go_to_distance(self):
+		print "finding wall"
+		angle, distance = self.find_closest_nonzero()
+		turn = (self.wall_distance - distance) / self.wall_distance
+		if angle < 180:
+			turn = turn * -1
+		self.angular = turn
+
 
 	def run(self):
 		r = rospy.Rate(10)
@@ -97,17 +107,16 @@ class Runner(object):
 			while not self.done and not rospy.is_shutdown():
 
 				# Run
-				if not self.parallel:
+				closest_object = self.find_closest_nonzero()
+				if (closest_object[1] < self.wall_distance - (self.wall_error / 2)) or (closest_object[1] > self.wall_distance + (self.wall_error / 2)):
+					# state 1: get to right distance from wall  
+					self.go_to_distance()
+
+				else:
+					# state 2: go parallel to wall
 					self.orient_parallel()
-					s = ""
-					s = s + "angular error: " +  str(self.error)
-					print s 
-
-					print "linear:" + str(self.linear) 
-					print "angular: " + str(self.angular)
-					print "---------" 
-
-				# Move - Set linear and angular speeds to those owned by self.
+				
+						# Move - Set linear and angular speeds to those owned by self.
 				# print "linear: " + str(self.linear) + \
 				# ", angular: " + str(self.angular)
 				twist = Twist()
@@ -119,8 +128,9 @@ class Runner(object):
 				twist.angular.x = 0 
 				twist.angular.y = 0
 				twist.angular.z = self.angular
-
 				self.pub.publish(twist)
+
+
 				r.sleep()
 		except KeyboardInterrupt:
 			print "Interrupt."
@@ -139,5 +149,5 @@ class Runner(object):
 		self.pub.publish(twist)
 
 if __name__ == '__main__':
-	node = Runner()
+	node = Runner(2)
 	node.run()

@@ -64,12 +64,17 @@ class Runner(object):
 		minimum = self.find_closest_nonzero()
 		angle = minimum[0] # Angle to closest object
 
+		# Calculates error - difference in degrees
 		if angle > 180:
 			self.error = angle - 270.0
 		else:
 			self.error = angle - 90.0
 
+		# Proportional control - 
+		#	Translates from 90 to 0, to 1 to 0
 		turn = self.error / 90.0
+
+		
 		self.angular = turn
 
 

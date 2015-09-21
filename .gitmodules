@@ -1,0 +1,3 @@
+[submodule "compRoboWarmupProject"]
+	path = compRoboWarmupProject
+	url = https://github.com/thomasnat1/compRoboWarmupProject.git

@@ -20,24 +20,24 @@ import sys
 import termios
 import time
 
-give = 5
-target = .5 
+target = .5 							# Target distance (meters) from wall
+wallPointThresh = 10 					# Points needed for obj to be wall
+wallDistThresh = .2 					# Distance in m between wall points
 
 class Runner(object):
 	def __init__(self):
 		# Robot states
-		self.done = False
-		self.distanced = False
-		self.parallel = False
-		self.wallside = "RIGHT"
+		self.done = False 				# Robot power state
+		self.isDistanced = False			# True: correct d from wall
+		self.isParallel = False			# True: parallel to wall
 
 		# Robot speed variables
-		self.speed = .1
-		self.linear = 1
-		self.angular = 0
+		self.speed = .1 				# Speed coefficient (0 to 1)
+		self.linear = 1 				# Linear speed (-1 to 1)
+		self.angular = 0				# Angular Speed (-1 to 1)
 
 		# Robot Data
-		self.ranges = []
+		self.ranges = []				# Laser Scan Data
 
 		self.settings = termios.tcgetattr(sys.stdin)
 		rospy.init_node('wall_follow_white')
@@ -59,7 +59,17 @@ class Runner(object):
 		# print "[" + str(min_index) + ", "+ str(min_dist) + "]"
 		return [min_index, min_dist]
 
+	def find_closest_wall(self):
+		for i in range(wallPointThresh, self.ranges)
+
+
+		
+
 	def orient_parallel(self):
+		'''
+		Determines angular velocity, depending on the robot's
+		angle relative to the wall. Proportional.
+		'''
 		turn = 0
 		minimum = self.find_closest_nonzero()
 		angle = minimum[0] # Angle to closest object
@@ -74,7 +84,7 @@ class Runner(object):
 		#	Translates from 90 to 0, to 1 to 0
 		turn = self.error / 90.0
 
-		
+
 		self.angular = turn
 
 
@@ -102,7 +112,9 @@ class Runner(object):
 			while not self.done and not rospy.is_shutdown():
 
 				# Run
-				if not self.parallel:
+				if not self.isDistanced:
+					pass
+				if not self.isParallel:
 					self.orient_parallel()
 					s = ""
 					s = s + "angular error: " +  str(self.error)

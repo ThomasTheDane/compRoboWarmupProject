@@ -25,11 +25,15 @@ wallPointThresh = 10 					# Points needed for obj to be wall
 wallDistThresh = .2 					# Distance in m between wall points
 
 class Runner(object):
-	def __init__(self):
+	def __init__(self, wall_distance, wall_point_threshold):
 		# Robot states
-		self.done = False 				# Robot power state
-		self.isDistanced = False			# True: correct d from wall
-		self.isParallel = False			# True: parallel to wall
+
+		self.done = False
+		self.is_distanced = False
+		self.is_parallel = False					# True: parallel to wall
+		self.wall_distance = wall_distance
+		self.wall_point_threshold = wall_point_threshold
+		self.wall_error = .1
 
 		# Robot speed variables
 		self.speed = .1 				# Speed coefficient (0 to 1)
@@ -60,44 +64,43 @@ class Runner(object):
 		return [min_index, min_dist]
 
 	def find_closest_wall(self):
-		
+
+		# Do not run without LIDAR data
 		if self.ranges == []:
-			print "Killing wall finder."
 			return
 			
-		self.wallRanges = self.ranges
-		self.wallDebug = ["*"] * len(self.ranges)
+		self.wall_ranges = self.ranges
+		self.wall_debug = ["*"] * len(self.ranges)
 
 		for i in range(0, len(self.ranges)):
 			isWall = True
 			# If the point could be part of a wall
-			if self.wallRanges[i] != 0:
+			if self.wall_ranges[i] != 0:
 				
 				c = 1
 
 				# Check to see if obj has enough pts to be considered a wall.
-				while (c < wallPointThresh):
+				while (c < self.wall_point_threshold):
 
 					# Ensure index not OOB - wrap to beginning of list
-					index = (i + c)%len(self.wallRanges)
+					index = (i + c)%len(self.wall_ranges)
 
 					# Check to see if wall continues 
-					if self.wallRanges[index] == 0:
+					if self.wall_ranges[index] == 0:
 						isWall = False
 					c = c+1
 			else:
 				isWall = False
 
-			self.wallDebug[i] = "Y" if isWall else "n"
-			self.wallRanges[i] = self.ranges[i] if isWall else 0
+			self.wall_debug[i] = "Y" if isWall else "n"
+			self.wall_ranges[i] = self.ranges[i] if isWall else 0
 
 		# print "raw ranges:"
 		# print self.ranges
 		# print "wall ranges:"
-		# print self.wallRanges
+		# print self.wall_ranges
 		# print "wall debug:"
-		# print self.wallDebug
-
+		# print self.wall_debug
 		
 
 	def orient_parallel(self):
@@ -105,6 +108,9 @@ class Runner(object):
 		Determines angular velocity, depending on the robot's
 		angle relative to the wall. Proportional.
 		'''
+
+		print "orient_parallel"
+
 		turn = 0
 		minimum = self.find_closest_nonzero()
 		angle = minimum[0] # Angle to closest object
@@ -118,7 +124,6 @@ class Runner(object):
 		# Proportional control - 
 		#	Translates from 90 to 0, to 1 to 0
 		turn = self.error / 90.0
-
 
 		self.angular = turn
 
@@ -149,14 +154,11 @@ class Runner(object):
 			while not self.done and not rospy.is_shutdown():
 
 				# Run
-				if not self.isDistanced:
-					pass
-				if not self.isParallel:
+
+
+				if not self.is_parallel:
 					self.orient_parallel()
 					self.find_closest_wall()
-					s = ""
-					# s = s + "angular error: " +  str(self.error)
-					print s 
 
 					# print "linear:" + str(self.linear) 
 					# print "angular: " + str(self.angular)
@@ -194,5 +196,5 @@ class Runner(object):
 		self.pub.publish(twist)
 
 if __name__ == '__main__':
-	node = Runner()
+	node = Runner(.3, 10)
 	node.run()

@@ -31,6 +31,8 @@ class Runner(object):
 		self.done = False
 		self.is_distanced = False
 		self.is_parallel = False					# True: parallel to wall
+		
+		self.distanced = False
 		self.wall_distance = wall_distance
 		self.wall_point_threshold = wall_point_threshold
 		self.wall_error = .1
@@ -127,7 +129,6 @@ class Runner(object):
 
 		self.angular = turn
 
-
 	def process_key(self):
 		tty.setraw(sys.stdin.fileno())
 		select.select([sys.stdin], [], [], 0)
@@ -143,10 +144,33 @@ class Runner(object):
 		elif (key == 'w'):
 			self.linear = 1
 
+	def orient_parallel(self):
+		print "going parallel"
+		turn = 0
+		minimum = self.find_closest_nonzero()
+		angle = minimum[0] # Angle to closest object
+
+		if angle > 180:
+			self.error = angle - 270.0
+		else:
+			self.error = angle - 90.0
+
+		turn = self.error / 90.0
+		self.angular = turn
+
 	def process_scan(self, scan):
 		self.ranges = []
 		for i in range(0, 360):  # Remove redundant 361st value
 			self.ranges.append(scan.ranges[i])
+
+	def go_to_distance(self):
+		print "finding wall"
+		angle, distance = self.find_closest_nonzero()
+		turn = (self.wall_distance - distance) / self.wall_distance
+		if angle < 180:
+			turn = turn * -1
+		self.angular = turn
+
 
 	def run(self):
 		r = rospy.Rate(10)
@@ -163,8 +187,17 @@ class Runner(object):
 					# print "linear:" + str(self.linear) 
 					# print "angular: " + str(self.angular)
 					# print "---------" 
+				closest_object = self.find_closest_nonzero()
+				if (closest_object[1] < self.wall_distance - (self.wall_error / 2)) or (closest_object[1] > self.wall_distance + (self.wall_error / 2)):
+					# state 1: get to right distance from wall  
+					pass
+					# self.go_to_distance()
 
-				# Move - Set linear and angular speeds to those owned by self.
+				else:
+					# state 2: go parallel to wall
+					self.orient_parallel()
+				
+						# Move - Set linear and angular speeds to those owned by self.
 				# print "linear: " + str(self.linear) + \
 				# ", angular: " + str(self.angular)
 				twist = Twist()
@@ -176,8 +209,9 @@ class Runner(object):
 				twist.angular.x = 0 
 				twist.angular.y = 0
 				twist.angular.z = self.angular
-
 				self.pub.publish(twist)
+
+
 				r.sleep()
 		except KeyboardInterrupt:
 			print "Interrupt."

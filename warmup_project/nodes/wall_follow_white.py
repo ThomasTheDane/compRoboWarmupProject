@@ -201,7 +201,7 @@ class Runner(object):
 		twist.angular.z = self.angular
 		self.pub.publish(twist)
 
-		while abs(self.error) > 20:
+		while abs(self.error) > 10:
 			self.orient_parallel()
 		
 		self.angular = turn
@@ -245,5 +245,5 @@ class Runner(object):
 		self.pub.publish(twist)
 
 if __name__ == '__main__':
-	node = Runner(.3, 10)
+	node = Runner(.5, 10)
 	node.run()

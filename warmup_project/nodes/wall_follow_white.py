@@ -60,8 +60,43 @@ class Runner(object):
 		return [min_index, min_dist]
 
 	def find_closest_wall(self):
-		for i in range(wallPointThresh, self.ranges)
+		
+		if self.ranges == []:
+			print "Killing wall finder."
+			return
+			
+		self.wallRanges = self.ranges
+		self.wallDebug = ["*"] * len(self.ranges)
 
+		for i in range(0, len(self.ranges)):
+			isWall = True
+			# If the point could be part of a wall
+			if self.wallRanges[i] != 0:
+				
+				c = 1
+
+				# Check to see if obj has enough pts to be considered a wall.
+				while (c < wallPointThresh):
+
+					# Ensure index not OOB - wrap to beginning of list
+					index = (i + c)%len(self.wallRanges)
+
+					# Check to see if wall continues 
+					if self.wallRanges[index] == 0:
+						isWall = False
+					c = c+1
+			else:
+				isWall = False
+
+			self.wallDebug[i] = "Y" if isWall else "n"
+			self.wallRanges[i] = self.ranges[i] if isWall else 0
+
+		# print "raw ranges:"
+		# print self.ranges
+		# print "wall ranges:"
+		# print self.wallRanges
+		# print "wall debug:"
+		# print self.wallDebug
 
 		
 
@@ -104,7 +139,9 @@ class Runner(object):
 			self.linear = 1
 
 	def process_scan(self, scan):
-		self.ranges = scan.ranges[0:360]
+		self.ranges = []
+		for i in range(0, 360):  # Remove redundant 361st value
+			self.ranges.append(scan.ranges[i])
 
 	def run(self):
 		r = rospy.Rate(10)
@@ -116,13 +153,14 @@ class Runner(object):
 					pass
 				if not self.isParallel:
 					self.orient_parallel()
+					self.find_closest_wall()
 					s = ""
-					s = s + "angular error: " +  str(self.error)
+					# s = s + "angular error: " +  str(self.error)
 					print s 
 
-					print "linear:" + str(self.linear) 
-					print "angular: " + str(self.angular)
-					print "---------" 
+					# print "linear:" + str(self.linear) 
+					# print "angular: " + str(self.angular)
+					# print "---------" 
 
 				# Move - Set linear and angular speeds to those owned by self.
 				# print "linear: " + str(self.linear) + \

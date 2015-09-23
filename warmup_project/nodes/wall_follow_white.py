@@ -75,9 +75,7 @@ class Runner(object):
 		elif (key == 'w'):
 			self.linear = 1
 
-	def orient_parallel(self):
-		print "going parallel"
-		turn = 0
+	def calc_error(self):
 		minimum = self.find_closest_nonzero()
 		angle = minimum[0] # Angle to closest object
 
@@ -86,20 +84,55 @@ class Runner(object):
 		else:
 			self.error = angle - 90.0
 
+	def orient_parallel(self):
+		print "going parallel"
+		
+		self.calc_error()
 		turn = self.error / 90.0
 		self.angular = turn
+
+		twist = Twist()
+
+		twist.linear.x = self.linear * self.speed
+		twist.linear.y = 0
+		twist.linear.z = 0
+		# if distance < wallDistance: postive z 
+		twist.angular.x = 0 
+		twist.angular.y = 0
+		twist.angular.z = self.angular
+		self.pub.publish(twist)
 
 	def process_scan(self, scan):
 		self.ranges = scan.ranges[0:360]
 
 	def go_to_distance(self):
 		print "finding wall"
+		self.calc_error()
+
 		angle, distance = self.find_closest_nonzero()
-		turn = (self.wall_distance - distance) / self.wall_distance
+		turn = ((self.wall_distance - distance) / self.wall_distance) / 2
 		if angle < 180:
 			turn = turn * -1
-		self.angular = turn
+		# print "turn: ", turn
+		# print "distance: ", distance
+		# print "error: ", self.error
+		# print "--------------------"
 
+		twist = Twist()
+
+		twist.linear.x = self.linear * self.speed
+		twist.linear.y = 0
+		twist.linear.z = 0
+
+		twist.angular.x = 0 
+		twist.angular.y = 0
+		twist.angular.z = self.angular
+		self.pub.publish(twist)
+
+		while abs(self.error) > 20:
+			self.orient_parallel()
+		
+		self.angular = turn
 
 	def run(self):
 		r = rospy.Rate(10)
@@ -119,16 +152,6 @@ class Runner(object):
 						# Move - Set linear and angular speeds to those owned by self.
 				# print "linear: " + str(self.linear) + \
 				# ", angular: " + str(self.angular)
-				twist = Twist()
-
-				twist.linear.x = self.linear * self.speed
-				twist.linear.y = 0
-				twist.linear.z = 0
-				# if distance < wallDistance: postive z 
-				twist.angular.x = 0 
-				twist.angular.y = 0
-				twist.angular.z = self.angular
-				self.pub.publish(twist)
 
 
 				r.sleep()
@@ -149,5 +172,5 @@ class Runner(object):
 		self.pub.publish(twist)
 
 if __name__ == '__main__':
-	node = Runner(2)
+	node = Runner(.5)
 	node.run()

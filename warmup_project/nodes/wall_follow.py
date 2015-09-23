@@ -43,7 +43,6 @@ class WallFollow(object):
 				# 	twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = .5
 				# else:
 				# 	twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = -.5
-
 			else:
 				twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
 

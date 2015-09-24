@@ -20,6 +20,8 @@ import sys
 import termios
 import time
 
+DEBUG = True
+
 class Runner(object):
 	def __init__(self, wall_distance, wall_point_threshold):
 		# Robot states
@@ -29,7 +31,8 @@ class Runner(object):
 		self.is_parallel = False					# True: parallel to wall
 		
 		self.wall_distance = wall_distance
-		self.wall_point_threshold = wall_point_threshold
+		self.wall_point_threshold = 15
+		self.wall_gap_threshold = 10
 
 		self.error_linear = 0
 		self.error_angular = 0
@@ -53,6 +56,9 @@ class Runner(object):
 											queue_size=10)
 		rospy.Subscriber("scan", LaserScan, self.process_scan)
 
+		if DEBUG:
+			self.speed = 0
+
 
 	def find_closest_nonzero(self):
 		min_dist = 1000
@@ -74,51 +80,95 @@ class Runner(object):
 		# print "[" + str(min_index) + ", "+ str(min_dist) + "]"
 		return [min_index, min_dist]
 
-	def find_closest_wall(self):
+	def find_walls(self):
 
 		# Do not run without LIDAR data
 		if self.ranges == []:
-			if self.ranges_backup == []:
-				return
-			else:
-				ranges = self.ranges
-		else:
-			ranges = self.ranges
+			return
 			
-		self.ranges_backup = ranges
-		self.wall_ranges = ranges
-		self.wall_debug = ["*"] * len(ranges)
+		self.ranges_backup = self.ranges
+		self.wall_ranges = self.ranges
+		self.wall_debug = ["*"] * len(self.ranges)
 
-		for i in range(0, len(ranges)):
-			isWall = True
-			# If the point could be part of a wall
+		i = 0
+		# Iterate by each index, allowing for index jumps.
+		while i < len(self.wall_ranges):
+
+			# If the point could be part of a wall:
 			if self.wall_ranges[i] != 0:
+				is_wall = True
 				
-				c = 1
 
-				# Check to see if obj has enough pts to be considered a wall.
-				while (c < self.wall_point_threshold):
+				# Check the pts following the first valid pt (i), to see if
+				# object is a wall
+				last = i 				# Last valid pt
+				w = i					# index for "checking" iteration
+				g = 0					# Count the # of "gaps" (distance = 0)
 
-					# Ensure index not OOB - wrap to beginning of list
-					index = (i + c)%len(self.wall_ranges)
+				while is_wall:
 
-					# Check to see if wall continues 
-					if self.wall_ranges[index] == 0:
-						isWall = False
-					c = c+1
+					# If the value is zero, its a gap, increase gap count
+					if self.wall_ranges[w] == 0:
+						g = g + 1
+
+					# If the value is not zero, the gap is closed.
+					else:
+						g = 0
+						last = i
+
+					# If the number of gaps exceeds the threshold, stop counting
+					if g < self.wall_gap_threshold:
+						is_wall = False
+						break
+						
+					w = w + 1
+
+				print "wall found: ["+ str(i) + "," + str(last) + "]"
+	
+
+				# If the # of gaps is less than the # of allowed gaps
+				#	Consider the whole section a wall, filling in where
+				#	there were gaps with an updating average.
+				if g < self.wall_gap_threshold:
+					w = i + 1
+
+					a = 1.0
+					avg = self.wall_ranges[i] * 1.0
+
+					while (w < self.wall_point_threshold):
+						if self.wall_ranges[w] == 0:
+							self.wall_ranges[w] = avg
+						else:
+							# Update the average
+							avg = (avg*a + self.wall_ranges[w]) / (a+1)
+							a = a + 1
+
+				i = last + 1
+
 			else:
-				isWall = False
+				i = i + 1
 
-			self.wall_debug[i] = "Y" if isWall else "n"
-			self.wall_ranges[i] = ranges[i] if isWall else 0
+			print ""
+			print ""
+			print "ranges:", self.ranges
+			print "wall_ranges:", self.wall_ranges
 
-		# print "raw ranges:"
-		# print self.ranges
-		# print "wall ranges:"
-		# print self.wall_ranges
-		# print "wall debug:"
-		# print self.wall_debug
+
+			wall_scan = self.make_wallscan(self.wall_ranges)
+			self.pub_wallscan.publish(wall_scan)
 		
+	def make_wallscan(self, data):
+		num_readings = len(data)
+		wall_scan = LaserScan()
+		wall_scan.header.frame_id = "base_laser_link"
+		wall_scan.ranges = data
+		wall_scan.angle_min = -3.14;
+		wall_scan.angle_max = 3.14;
+		wall_scan.angle_increment = (3.14*2) / num_readings;
+		wall_scan.range_min = 0.0;
+		wall_scan.range_max = 5;
+
+		return wall_scan
 
 	def process_key(self):
 		tty.setraw(sys.stdin.fileno())
@@ -169,10 +219,19 @@ class Runner(object):
 		self.pub.publish(twist)
 
 	def process_scan(self, scan):
+		# print "scan.header.frame_id", scan.header.frame_id
+		# print "scan.angle_min", scan.angle_min
+		# print" scan.angle_min:", scan.angle_min
+		# print" scan.angle_max:", scan.angle_max
+		# print" scan.angle_increment:", scan.angle_increment
+		# print" scan.range_min:", scan.range_min
+		# print" scan.range_max:", scan.range_max
 		ranges = []
 		for i in range(0, 360):  # Remove redundant 361st value
 			ranges.append(scan.ranges[i])
-		self.ranges = ranges
+		if ranges != []:
+			self.ranges = ranges
+			self.find_walls()
 
 	def go_to_distance(self):
 		
@@ -212,8 +271,9 @@ class Runner(object):
 				closest_object = self.find_closest_nonzero()
 				if (closest_object[1] < self.wall_distance - (self.permissible_distance / 2)) or (closest_object[1] > self.wall_distance + (self.permissible_distance / 2)):
 					# state 1: get to right distance from wall  
-					self.go_to_distance()
-					behavior = "correcting distance"
+					if not DEBUG:
+						self.go_to_distance()
+						behavior = "correcting distance"
 
 				else:
 					# state 2: go parallel to wall
@@ -246,5 +306,5 @@ class Runner(object):
 		self.pub.publish(twist)
 
 if __name__ == '__main__':
-	node = Runner(.5, 10)
+	node = Runner(.5, 20)
 	node.run()

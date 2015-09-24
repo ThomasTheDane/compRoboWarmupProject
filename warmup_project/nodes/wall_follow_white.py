@@ -20,10 +20,6 @@ import sys
 import termios
 import time
 
-target = .5 							# Target distance (meters) from wall
-wallPointThresh = 10 					# Points needed for obj to be wall
-wallDistThresh = .2 					# Distance in m between wall points
-
 class Runner(object):
 	def __init__(self, wall_distance, wall_point_threshold):
 		# Robot states
@@ -32,10 +28,12 @@ class Runner(object):
 		self.is_distanced = False
 		self.is_parallel = False					# True: parallel to wall
 		
-		self.distanced = False
 		self.wall_distance = wall_distance
 		self.wall_point_threshold = wall_point_threshold
-		self.wall_error = .1
+
+		self.error_linear = 0
+		self.error_angular = 0
+		self.permissible_distance = .1
 
 		# Robot speed variables
 		self.speed = .1 				# Speed coefficient (0 to 1)
@@ -44,24 +42,34 @@ class Runner(object):
 
 		# Robot Data
 		self.ranges = []				# Laser Scan Data
+		self.ranges_backup = []			# Past laser scan data
 
 		self.settings = termios.tcgetattr(sys.stdin)
 		rospy.init_node('wall_follow_white')
 
 		self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
+		self.pub_wallscan = rospy.Publisher('wallscan', 
+											LaserScan, 
+											queue_size=10)
 		rospy.Subscriber("scan", LaserScan, self.process_scan)
 
 
 	def find_closest_nonzero(self):
 		min_dist = 1000
 		min_index = -1
-		if self.ranges:
+		if self.ranges != []:
 			for i in range(0, len(self.ranges)):
-				distance = self.ranges[i]
-				if (distance != 0):
-					if distance < min_dist:
-						min_dist = distance
-						min_index = i
+				try:
+					distance = self.ranges[i]
+					if (distance != 0):
+						if distance < min_dist:
+							min_dist = distance
+							min_index = i
+				except IndexError:
+					print "!!!!! INDEX ERROR !!!!!"
+					print "		attempted index:", i
+					print "		self.ranges:", self.ranges
+
 
 		# print "[" + str(min_index) + ", "+ str(min_dist) + "]"
 		return [min_index, min_dist]
@@ -70,12 +78,18 @@ class Runner(object):
 
 		# Do not run without LIDAR data
 		if self.ranges == []:
-			return
+			if self.ranges_backup == []:
+				return
+			else:
+				ranges = self.ranges
+		else:
+			ranges = self.ranges
 			
-		self.wall_ranges = self.ranges
-		self.wall_debug = ["*"] * len(self.ranges)
+		self.ranges_backup = ranges
+		self.wall_ranges = ranges
+		self.wall_debug = ["*"] * len(ranges)
 
-		for i in range(0, len(self.ranges)):
+		for i in range(0, len(ranges)):
 			isWall = True
 			# If the point could be part of a wall
 			if self.wall_ranges[i] != 0:
@@ -96,7 +110,7 @@ class Runner(object):
 				isWall = False
 
 			self.wall_debug[i] = "Y" if isWall else "n"
-			self.wall_ranges[i] = self.ranges[i] if isWall else 0
+			self.wall_ranges[i] = ranges[i] if isWall else 0
 
 		# print "raw ranges:"
 		# print self.ranges
@@ -105,30 +119,6 @@ class Runner(object):
 		# print "wall debug:"
 		# print self.wall_debug
 		
-
-	def orient_parallel(self):
-		'''
-		Determines angular velocity, depending on the robot's
-		angle relative to the wall. Proportional.
-		'''
-
-		print "orient_parallel"
-
-		turn = 0
-		minimum = self.find_closest_nonzero()
-		angle = minimum[0] # Angle to closest object
-
-		# Calculates error - difference in degrees
-		if angle > 180:
-			self.error = angle - 270.0
-		else:
-			self.error = angle - 90.0
-
-		# Proportional control - 
-		#	Translates from 90 to 0, to 1 to 0
-		turn = self.error / 90.0
-
-		self.angular = turn
 
 	def process_key(self):
 		tty.setraw(sys.stdin.fileno())
@@ -145,20 +135,26 @@ class Runner(object):
 		elif (key == 'w'):
 			self.linear = 1
 
-	def calc_error(self):
+	def calc_error_angular(self):
 		minimum = self.find_closest_nonzero()
 		angle = minimum[0] # Angle to closest object
 
+		# Calculates error_angular - difference in degrees
 		if angle > 180:
-			self.error = angle - 270.0
+			self.error_angular = angle - 270.0
 		else:
-			self.error = angle - 90.0
+			self.error_angular = angle - 90.0
 
 	def orient_parallel(self):
-		print "going parallel"
-		
-		self.calc_error()
-		turn = self.error / 90.0
+		'''
+		Determines angular velocity, depending on the robot's
+		angle relative to the wall. Proportional.
+		'''
+		self.calc_error_angular()
+
+		# Proportional control - 
+		#	Translates from 90 to 0, to 1 to 0
+		turn = self.error_angular / 90.0
 		self.angular = turn
 
 		twist = Twist()
@@ -173,22 +169,21 @@ class Runner(object):
 		self.pub.publish(twist)
 
 	def process_scan(self, scan):
-		self.ranges = []
+		ranges = []
 		for i in range(0, 360):  # Remove redundant 361st value
-			self.ranges.append(scan.ranges[i])
+			ranges.append(scan.ranges[i])
+		self.ranges = ranges
 
 	def go_to_distance(self):
-		print "finding wall"
-		self.calc_error()
+		
+		self.calc_error_angular()
 
 		angle, distance = self.find_closest_nonzero()
 		turn = ((self.wall_distance - distance) / self.wall_distance) / 2
 		if angle < 180:
 			turn = turn * -1
-		# print "turn: ", turn
-		# print "distance: ", distance
-		# print "error: ", self.error
-		# print "--------------------"
+
+		self.error_linear = self.wall_distance - distance
 
 		twist = Twist()
 
@@ -201,7 +196,7 @@ class Runner(object):
 		twist.angular.z = self.angular
 		self.pub.publish(twist)
 
-		while abs(self.error) > 10:
+		while abs(self.error_angular) > 20:
 			self.orient_parallel()
 		
 		self.angular = turn
@@ -212,15 +207,21 @@ class Runner(object):
 			while not self.done and not rospy.is_shutdown():
 
 				# Run
+				behavior = ""
 
 				closest_object = self.find_closest_nonzero()
-				if (closest_object[1] < self.wall_distance - (self.wall_error / 2)) or (closest_object[1] > self.wall_distance + (self.wall_error / 2)):
+				if (closest_object[1] < self.wall_distance - (self.permissible_distance / 2)) or (closest_object[1] > self.wall_distance + (self.permissible_distance / 2)):
 					# state 1: get to right distance from wall  
 					self.go_to_distance()
+					behavior = "correcting distance"
 
 				else:
 					# state 2: go parallel to wall
 					self.orient_parallel()
+					behavior = "correcting angle"
+
+				print "errors: angular;", self.error_angular, \
+				"linear;", self.error_linear, " | behavior:", behavior
 				
 						# Move - Set linear and angular speeds to those owned by self.
 				# print "linear: " + str(self.linear) + \
